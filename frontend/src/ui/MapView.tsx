@@ -48,7 +48,15 @@ export default function MapView({
     layerRef.current = layer
 
     return () => {
-      map.remove()
+      // React 18 StrictMode will mount->unmount->mount effects in dev.
+      // If we don't reset refs here, we may keep a pointer to a removed Leaflet map
+      // and later calls like fitBounds will crash (e.g. reading _leaflet_pos).
+      try {
+        map.remove()
+      } finally {
+        leafletRef.current = null
+        layerRef.current = null
+      }
     }
   }, [])
 
