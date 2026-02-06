@@ -2,15 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+RUN wget -O - https://chsrc.run/posix | bash \
+  && (chsrc set debian || true) && (chsrc set pip || true)
+
 # Speed up apt using chsrc (best-effort). If it fails, continue with default sources.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl \
-  && curl -fsSL https://gitee.com/RubyMetric/chsrc/raw/main/chsrc -o /usr/local/bin/chsrc \
-  && chmod +x /usr/local/bin/chsrc \
-  && (chsrc set apt || true) \
-  && apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+  && apt-get install -y --no-install-recommends ca-certificates
 
 COPY pyproject.toml /app/pyproject.toml
 
