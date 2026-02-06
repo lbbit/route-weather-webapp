@@ -1,0 +1,16 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      - AMAP_API_KEY=${AMAP_API_KEY}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    environment:
+      - VITE_API_BASE=http://backend:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
