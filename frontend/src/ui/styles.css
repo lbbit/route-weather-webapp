@@ -55,7 +55,15 @@ body{
 .arrow{ color: var(--muted); }
 
 .main{ flex:1; display:grid; grid-template-columns: 1.4fr 0.9fr; gap: 14px; padding: 14px; }
-.map{ border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: rgba(255,255,255,0.04); }
+.map{ border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: rgba(255,255,255,0.04); position: relative; }
+
+.mapToast{ position:absolute; left: 12px; bottom: 12px; right: 12px; padding: 10px 12px; border-radius: 14px; border: 1px solid rgba(245,158,11,0.45); background: rgba(245,158,11,0.15); color: rgba(255,255,255,0.9); font-size: 12px; backdrop-filter: blur(8px); }
+
+/* Leaflet divIcon labels */
+.wpLabel{ background: transparent; border: none; }
+.wpCard{ padding: 6px 8px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: rgba(10,16,30,0.65); color: rgba(255,255,255,0.92); box-shadow: 0 10px 20px rgba(0,0,0,0.25); }
+.wpName{ font-weight: 650; font-size: 12px; line-height: 1.2; white-space: nowrap; }
+.wpEta{ margin-top: 2px; font-size: 11px; color: rgba(255,255,255,0.68); white-space: nowrap; }
 .panel{ display:flex; flex-direction:column; gap: 12px; }
 
 .card{

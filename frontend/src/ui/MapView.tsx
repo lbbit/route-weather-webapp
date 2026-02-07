@@ -1,20 +1,12 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
-// Fix default marker icons when bundling
-// @ts-ignore
-import marker2x from 'leaflet/dist/images/marker-icon-2x.png'
-// @ts-ignore
-import marker1x from 'leaflet/dist/images/marker-icon.png'
-// @ts-ignore
-import markerShadow from 'leaflet/dist/images/marker-shadow.png'
-
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: marker2x,
-  iconUrl: marker1x,
-  shadowUrl: markerShadow,
-})
+// NOTE: In mainland China, OpenStreetMap default tile servers often time out.
+// We default to AMap (Gaode) public tile endpoint for demo purposes.
+const DEFAULT_TILE_URL =
+  (import.meta as any).env?.VITE_TILE_URL ||
+  'https://webrd0{1-4}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&style=7&x={x}&y={y}&z={z}'
 
 export default function MapView({
   polyPoints,
@@ -26,6 +18,8 @@ export default function MapView({
   const mapRef = useRef<HTMLDivElement | null>(null)
   const leafletRef = useRef<L.Map | null>(null)
   const layerRef = useRef<L.LayerGroup | null>(null)
+  const tileRef = useRef<L.TileLayer | null>(null)
+  const [tileError, setTileError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!mapRef.current) return
@@ -37,10 +31,18 @@ export default function MapView({
       zoomControl: true,
     })
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const tile = L.tileLayer(DEFAULT_TILE_URL, {
       maxZoom: 18,
-      attribution: '© OpenStreetMap',
-    }).addTo(map)
+      attribution: 'Map tiles',
+    })
+    tile.on('tileerror', (e: any) => {
+      // Avoid spamming state updates; set once.
+      setTileError((prev) => prev || '底图瓦片加载失败（网络/源不可达），已降级为仅显示路线与标注')
+      // eslint-disable-next-line no-console
+      console.warn('tileerror', e)
+    })
+    tile.addTo(map)
+    tileRef.current = tile
 
     const layer = L.layerGroup().addTo(map)
 
@@ -73,20 +75,39 @@ export default function MapView({
       map.fitBounds(line.getBounds().pad(0.15))
     }
 
-    for (const wp of waypoints) {
+    const labelIcon = (html: string) =>
+      L.divIcon({
+        className: 'wpLabel',
+        html,
+        iconSize: undefined,
+      })
+
+    for (let i = 0; i < waypoints.length; i++) {
+      const wp = waypoints[i]
       if (!wp.location) continue
       const [lng, lat] = wp.location.split(',').map(Number)
       if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue
+
       const eta = new Date(wp.eta_time)
       const etaText = Number.isNaN(eta.getTime())
-        ? wp.eta_time
+        ? ''
         : eta.toLocaleString(undefined, { hour: '2-digit', minute: '2-digit' })
-      const m = L.marker([lat, lng]).bindPopup(
-        `<b>${wp.name}</b><br/>ETA: +${wp.eta_minutes} 分钟（${etaText}）`
-      )
+
+      const html = `<div class="wpCard">
+        <div class="wpName">${wp.name}</div>
+        <div class="wpEta">+${wp.eta_minutes}m${etaText ? ` · ${etaText}` : ''}</div>
+      </div>`
+
+      // Use divIcon to avoid image asset failures in constrained networks.
+      const m = L.marker([lat, lng], { icon: labelIcon(html) })
       m.addTo(layer)
     }
   }, [polyPoints, waypoints])
 
-  return <div ref={mapRef} style={{ height: '100%', width: '100%' }} />
+  return (
+    <div style={{ height: '100%', width: '100%', position: 'relative' }}>
+      <div ref={mapRef} style={{ height: '100%', width: '100%' }} />
+      {tileError ? <div className="mapToast">{tileError}</div> : null}
+    </div>
+  )
 }
