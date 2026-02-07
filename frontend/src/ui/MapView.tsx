@@ -74,9 +74,15 @@ export default function MapView({
     }
 
     for (const wp of waypoints) {
+      if (!wp.location) continue
       const [lng, lat] = wp.location.split(',').map(Number)
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue
+      const eta = new Date(wp.eta_time)
+      const etaText = Number.isNaN(eta.getTime())
+        ? wp.eta_time
+        : eta.toLocaleString(undefined, { hour: '2-digit', minute: '2-digit' })
       const m = L.marker([lat, lng]).bindPopup(
-        `<b>${wp.name}</b><br/>ETA: +${wp.eta_minutes} 分钟<br/>${new Date(wp.eta_time).toLocaleString()}`
+        `<b>${wp.name}</b><br/>ETA: +${wp.eta_minutes} 分钟（${etaText}）`
       )
       m.addTo(layer)
     }

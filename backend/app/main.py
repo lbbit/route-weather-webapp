@@ -37,6 +37,8 @@ class WaypointWeather(BaseModel):
     eta_time: datetime
     adcode: str | None = None
     weather: dict[str, Any] | None
+    weather_source: str | None = None  # live | forecast | none
+    weather_error: str | None = None
 
 
 class RouteResponse(BaseModel):
@@ -125,7 +127,7 @@ def extract_cross_cities_v5(path: dict[str, Any]) -> list[dict[str, str]]:
 
 
 async def amap_weather_live(client: httpx.AsyncClient, adcode_or_city: str, key: str) -> dict[str, Any] | None:
-    # live weather by city/adcode
+    """Live weather by city/adcode."""
     r = await client.get(
         f"{AMAP_BASE_V3}/weather/weatherInfo",
         params={"city": adcode_or_city, "extensions": "base", "key": key},
@@ -135,6 +137,85 @@ async def amap_weather_live(client: httpx.AsyncClient, adcode_or_city: str, key:
     if data.get("status") != "1" or not data.get("lives"):
         return None
     return data["lives"][0]
+
+
+async def amap_weather_forecast(client: httpx.AsyncClient, adcode_or_city: str, key: str) -> dict[str, Any] | None:
+    """Daily forecast weather (up to 4 days) by city/adcode."""
+    r = await client.get(
+        f"{AMAP_BASE_V3}/weather/weatherInfo",
+        params={"city": adcode_or_city, "extensions": "all", "key": key},
+    )
+    r.raise_for_status()
+    data = r.json()
+    if data.get("status") != "1" or not data.get("forecasts"):
+        return None
+    return data["forecasts"][0]
+
+
+def select_weather_by_eta(
+    *,
+    live: dict[str, Any] | None,
+    forecast: dict[str, Any] | None,
+    eta_time: datetime,
+) -> tuple[dict[str, Any] | None, str, str | None]:
+    """Pick weather payload for a waypoint.
+
+    AMap provides live weather + daily forecast (not hourly). We select:
+    - live, when ETA is close (<= 2 hours)
+    - forecast cast (day/night), when ETA is later
+
+    Returns: (weather, source, error)
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        # If eta_time is naive, treat it as UTC
+        if eta_time.tzinfo is None:
+            eta_time = eta_time.replace(tzinfo=timezone.utc)
+        delta = eta_time - now
+
+        if delta.total_seconds() <= 2 * 3600:
+            if live:
+                return live, "live", None
+
+        if not forecast:
+            return (live, "live", None) if live else (None, "none", "forecast_unavailable")
+
+        casts = forecast.get("casts") or []
+        if not casts:
+            return (live, "live", None) if live else (None, "none", "forecast_empty")
+
+        # choose cast by local date (forecast date is YYYY-MM-DD)
+        target_date = eta_time.astimezone(timezone.utc).date().isoformat()
+        cast = next((c for c in casts if c.get("date") == target_date), casts[0])
+
+        hour = eta_time.astimezone(timezone.utc).hour
+        is_day = 6 <= hour < 18
+
+        # normalize to a single display payload (for UI)
+        weather = {
+            "weather": cast.get("dayweather") if is_day else cast.get("nightweather"),
+            "temperature": cast.get("daytemp") if is_day else cast.get("nighttemp"),
+            "reporttime": forecast.get("reporttime"),
+            "city": forecast.get("city"),
+            "province": forecast.get("province"),
+            "_forecast": {
+                "date": cast.get("date"),
+                "dayweather": cast.get("dayweather"),
+                "nightweather": cast.get("nightweather"),
+                "daytemp": cast.get("daytemp"),
+                "nighttemp": cast.get("nighttemp"),
+                "daywind": cast.get("daywind"),
+                "nightwind": cast.get("nightwind"),
+                "daypower": cast.get("daypower"),
+                "nightpower": cast.get("nightpower"),
+            },
+        }
+        return weather, "forecast", None
+    except Exception as e:
+        # fallback to live
+        if live:
+            return live, "live", f"forecast_select_error:{type(e).__name__}"
+        return None, "none", f"forecast_select_error:{type(e).__name__}"
 
 
 async def amap_regeo_citycode(client: httpx.AsyncClient, location: str, key: str) -> dict[str, Any] | None:
@@ -226,7 +307,12 @@ async def route_weather(req: RouteRequest) -> RouteResponse:
 
         depart_at = req.depart_at
         if depart_at is None:
+            # client assumes Asia/Shanghai; we keep server-side in UTC but any timezone-aware
+            # datetime from client will be respected.
             depart_at = datetime.now(timezone.utc)
+        elif depart_at.tzinfo is None:
+            # treat naive timestamps as Asia/Shanghai
+            depart_at = depart_at.replace(tzinfo=timezone(timedelta(hours=8)))
 
         # Prefer "cross cities" list if v5 provides it (closer to wow logic).
         cross_cities = extract_cross_cities_v5(path)
@@ -249,7 +335,20 @@ async def route_weather(req: RouteRequest) -> RouteResponse:
 
                 eta_min = int(((i + 1) / (n + 1)) * (duration_s / 60)) if duration_s > 0 else 0
                 eta_time = depart_at + timedelta(minutes=eta_min)
-                weather = await amap_weather_live(client, city["adcode"], amap_key)
+
+                weather = None
+                weather_source = None
+                weather_error = None
+                try:
+                    live = await amap_weather_live(client, city["adcode"], amap_key)
+                    forecast = await amap_weather_forecast(client, city["adcode"], amap_key)
+                    weather, weather_source, weather_error = select_weather_by_eta(
+                        live=live, forecast=forecast, eta_time=eta_time
+                    )
+                except Exception as e:
+                    weather = None
+                    weather_source = "none"
+                    weather_error = f"weather_fetch_error:{type(e).__name__}"
 
                 if loc:
                     waypoints.append(
@@ -260,6 +359,8 @@ async def route_weather(req: RouteRequest) -> RouteResponse:
                             eta_time=eta_time,
                             adcode=city["adcode"],
                             weather=weather,
+                            weather_source=weather_source,
+                            weather_error=weather_error,
                         )
                     )
         else:
@@ -267,14 +368,30 @@ async def route_weather(req: RouteRequest) -> RouteResponse:
             points = pick_waypoint_points(steps, max_points=12)
             for idx, (loc, eta_min) in enumerate(points, start=1):
                 regeo = await amap_regeo_citycode(client, loc, amap_key)
-                weather = None
                 name = regeo.get("city") if regeo else f"Waypoint {idx}"
                 adcode = regeo.get("adcode") if regeo else None
                 city_key = adcode or (regeo.get("city") if regeo else None)
-                if city_key:
-                    weather = await amap_weather_live(client, city_key, amap_key)
 
                 eta_time = depart_at + timedelta(minutes=eta_min)
+
+                weather = None
+                weather_source = None
+                weather_error = None
+                if city_key:
+                    try:
+                        live = await amap_weather_live(client, city_key, amap_key)
+                        forecast = await amap_weather_forecast(client, city_key, amap_key)
+                        weather, weather_source, weather_error = select_weather_by_eta(
+                            live=live, forecast=forecast, eta_time=eta_time
+                        )
+                    except Exception as e:
+                        weather = None
+                        weather_source = "none"
+                        weather_error = f"weather_fetch_error:{type(e).__name__}"
+                else:
+                    weather_source = "none"
+                    weather_error = "missing_city_key"
+
                 waypoints.append(
                     WaypointWeather(
                         name=name,
@@ -283,6 +400,8 @@ async def route_weather(req: RouteRequest) -> RouteResponse:
                         eta_time=eta_time,
                         adcode=adcode,
                         weather=weather,
+                        weather_source=weather_source,
+                        weather_error=weather_error,
                     )
                 )
 

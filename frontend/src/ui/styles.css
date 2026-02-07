@@ -75,8 +75,12 @@ body{
 
 .list{ display:flex; flex-direction:column; gap: 10px; }
 .row{ display:flex; justify-content:space-between; align-items:center; gap: 12px; padding: 10px 10px; border: 1px solid var(--border); border-radius: 14px; background: rgba(255,255,255,0.03); }
+.rowDest{ border-color: rgba(59,130,246,0.55); box-shadow: 0 0 0 1px rgba(59,130,246,0.10) inset; }
 .rowTitle{ font-weight: 600; }
 .rowSub{ margin-top: 4px; color: var(--muted); font-size: 12px; }
+.rowHint{ margin-top: 4px; color: rgba(255,255,255,0.55); font-size: 12px; }
+.tag{ display:inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; font-size: 11px; border: 1px solid rgba(255,255,255,0.18); color: rgba(255,255,255,0.75); background: rgba(255,255,255,0.06); }
+.tagForecast{ border-color: rgba(168,85,247,0.45); background: rgba(168,85,247,0.14); color: rgba(236,214,255,0.95); }
 .rowRight{ text-align:right; min-width: 84px; }
 .temp{ font-size: 18px; font-weight: 700; }
 .pill{ display:inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid rgba(59,130,246,0.4); color: rgba(214,232,255,0.95); background: rgba(59,130,246,0.18); }

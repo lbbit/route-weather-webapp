@@ -13,7 +13,10 @@ type RouteResp = {
     location: string
     eta_minutes: number
     eta_time: string
+    adcode?: string | null
     weather: any | null
+    weather_source?: string | null
+    weather_error?: string | null
   }>
 }
 
@@ -26,6 +29,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<RouteResp | null>(null)
+  const [departAt, setDepartAt] = useState<string>('')
 
   const polyPoints = useMemo(() => {
     if (!data?.polyline) return []
@@ -42,7 +46,7 @@ export default function App() {
       const res = await fetch('/api/route', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ origin, destination, strategy }),
+        body: JSON.stringify({ origin, destination, strategy, depart_at: departAt ? new Date(departAt).toISOString() : null }),
       })
       if (!res.ok) {
         const text = await res.text()
@@ -75,6 +79,12 @@ export default function App() {
             <option value="avoid_tolls">不走收费</option>
             <option value="avoid_congestion">躲避拥堵</option>
           </select>
+          <input
+            type="datetime-local"
+            value={departAt}
+            onChange={(e) => setDepartAt(e.target.value)}
+            title="出发时间（可选）"
+          />
           <button disabled={loading} onClick={onSearch}>
             {loading ? '查询中…' : '查询'}
           </button>
