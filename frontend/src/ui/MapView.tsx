@@ -4,9 +4,10 @@ import 'leaflet/dist/leaflet.css'
 
 // NOTE: In mainland China, OpenStreetMap default tile servers often time out.
 // We default to AMap (Gaode) public tile endpoint for demo purposes.
+// Leaflet only supports {s} subdomain variables (not {1-4}).
 const DEFAULT_TILE_URL =
   (import.meta as any).env?.VITE_TILE_URL ||
-  'https://webrd0{1-4}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&style=7&x={x}&y={y}&z={z}'
+  'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&style=7&x={x}&y={y}&z={z}'
 
 export default function MapView({
   polyPoints,
@@ -33,6 +34,7 @@ export default function MapView({
 
     const tile = L.tileLayer(DEFAULT_TILE_URL, {
       maxZoom: 18,
+      subdomains: ['1', '2', '3', '4'],
       attribution: 'Map tiles',
     })
     tile.on('tileerror', (e: any) => {
