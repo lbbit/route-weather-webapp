@@ -48,6 +48,7 @@ class RouteResponse(BaseModel):
     duration_s: int
     polyline: str
     waypoints: list[WaypointWeather]
+    debug: dict[str, Any] | None = None
 
 
 app = FastAPI(title="Route Weather API", version="0.1.0")
@@ -299,7 +300,14 @@ async def route_weather(req: RouteRequest) -> RouteResponse:
 
         path = data["route"]["paths"][0]
         distance_m = int(float(path.get("distance", 0)))
-        duration_s = int(float(path.get("duration", 0)))
+        # AMap v5 may omit/zero "duration" unless certain fields are returned.
+        # wow project reads route.paths[i].cost.duration, which is more reliable.
+        duration_s = int(float(path.get("duration") or 0))
+        if duration_s <= 0:
+            try:
+                duration_s = int(float(((path.get("cost") or {}).get("duration")) or 0))
+            except Exception:
+                duration_s = 0
         steps = path.get("steps", [])
 
         # collect full polyline (steps joined)
@@ -412,4 +420,11 @@ async def route_weather(req: RouteRequest) -> RouteResponse:
             duration_s=duration_s,
             polyline=polyline,
             waypoints=waypoints,
+            debug={
+                "amap_path_distance": path.get("distance"),
+                "amap_path_duration": path.get("duration"),
+                "amap_cost_duration": (path.get("cost") or {}).get("duration"),
+                "steps": len(steps or []),
+                "polyline_points": 0 if not polyline else len(polyline.split(";")),
+            },
         )

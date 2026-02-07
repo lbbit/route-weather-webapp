@@ -18,6 +18,7 @@ type RouteResp = {
     weather_source?: string | null
     weather_error?: string | null
   }>
+  debug?: any
 }
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<RouteResp | null>(null)
   const [departAt, setDepartAt] = useState<string>('')
+  const [logs, setLogs] = useState<string[]>([])
 
   const polyPoints = useMemo(() => {
     if (!data?.polyline) return []
@@ -42,7 +44,15 @@ export default function App() {
   async function onSearch() {
     setLoading(true)
     setError(null)
+    setLogs([])
+
+    const log = (msg: string) => {
+      const line = `[${new Date().toLocaleTimeString()}] ${msg}`
+      setLogs((prev) => [...prev, line].slice(-200))
+    }
+
     try {
+      log(`开始查询：${origin} → ${destination}（${strategy}）`)
       const res = await fetch('/api/route', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -50,13 +60,19 @@ export default function App() {
       })
       if (!res.ok) {
         const text = await res.text()
+        log(`接口返回错误：${res.status}`)
         throw new Error(text)
       }
       const json = (await res.json()) as RouteResp
+      log(`路线返回：距离 ${(json.distance_m / 1000).toFixed(1)}km，用时 ${Math.round(json.duration_s / 60)}min，途经点 ${json.waypoints.length}`)
+      if (json.debug) {
+        log(`debug: duration=${json.debug.amap_path_duration}, cost.duration=${json.debug.amap_cost_duration}, steps=${json.debug.steps}, polyPoints=${json.debug.polyline_points}`)
+      }
       setData(json)
     } catch (e: any) {
       setError(e?.message || String(e))
       setData(null)
+      setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] 失败：${e?.message || String(e)}`])
     } finally {
       setLoading(false)
     }
@@ -97,6 +113,18 @@ export default function App() {
         </div>
         <div className="panel">
           {error ? <div className="error">{error}</div> : null}
+          {logs.length ? (
+            <div className="card">
+              <div className="cardTitle">查询日志</div>
+              <div className="logBox">
+                {logs.map((l, i) => (
+                  <div className="logLine" key={i}>
+                    {l}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <ResultsPanel data={data} />
         </div>
       </main>
