@@ -16,6 +16,34 @@ function fmtTime(iso: string) {
   return d.toLocaleString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
+function getWeatherSummary(waypoints: any[]): string | null {
+  const lives = (waypoints || []).map(wp => wp?.weather).filter(Boolean)
+  if (!lives.length) return null
+
+  const temps = lives
+    .map((w: any) => Number.parseFloat(String(w.temperature)))
+    .filter((t: number) => Number.isFinite(t)) as number[]
+
+  const minT = temps.length ? Math.min(...temps) : null
+  const maxT = temps.length ? Math.max(...temps) : null
+
+  const freq = new Map<string, number>()
+  for (const w of lives) {
+    const k = String((w as any).weather || '').trim()
+    if (!k) continue
+    freq.set(k, (freq.get(k) || 0) + 1)
+  }
+  const main = Array.from(freq.entries()).sort((a, b) => b[1] - a[1])[0]?.[0]
+
+  const parts: string[] = []
+  if (main) parts.push(main)
+  if (minT !== null && maxT !== null) {
+    parts.push(minT === maxT ? `${minT}°C` : `${minT}~${maxT}°C`)
+  }
+
+  return parts.length ? `天气：${parts.join(' · ')}` : null
+}
+
 export default function ResultsPanel({ data }: { data: any | null }) {
   if (!data) {
     return (
@@ -29,11 +57,13 @@ export default function ResultsPanel({ data }: { data: any | null }) {
   const km = (data.distance_m / 1000).toFixed(1)
   const mins = Math.round(data.duration_s / 60)
   const durationText = mins > 0 ? fmtMinutes(mins) : data.duration_s ? `${data.duration_s}s` : '—'
+  const weatherSummary = getWeatherSummary(data.waypoints)
 
   return (
     <div className="stack">
       <div className="card">
         <div className="cardTitle">路线概览</div>
+        {weatherSummary ? <div className="muted" style={{ marginBottom: 10 }}>{weatherSummary}</div> : null}
         <div className="kv">
           <div>
             <div className="k">起点</div>
